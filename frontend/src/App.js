@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useContext } from "react";
+import { AuthContext } from "./context/AuthContext";
+import { Routes, Route, Navigate } from "react-router-dom";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import assignments from "./data/assignments";
 import "./styles/App.scss";
 
@@ -35,6 +39,9 @@ function checkCorrectness(result, assignment) {
 }
 
 function App() {
+  const { user, logout } = useContext(AuthContext);
+  
+
   const [feedback, setFeedback] = useState(null);
   const [completed, setCompleted] = useState({});
   const [difficulty, setDifficulty] = useState("");
@@ -44,6 +51,48 @@ function App() {
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [showDashboard, setShowDashboard] = useState(false);
+
+  /* =====================
+   LOAD PROGRESS FROM localStorage
+===================== */
+useEffect(() => {
+  const saved = localStorage.getItem("sqlstudio-progress");
+  if (saved) {
+    setCompleted(JSON.parse(saved));
+  }
+}, []);
+
+/* =====================
+   SAVE PROGRESS TO localStorage
+===================== */
+useEffect(() => {
+  localStorage.setItem(
+    "sqlstudio-progress",
+    JSON.stringify(completed)
+  );
+}, [completed]);
+
+/* =====================
+     AUTH GUARD (IMPORTANT)
+  ===================== */
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="*" element={<Navigate to="/login" />} />
+      </Routes>
+    );
+  }
+
+  /* =====================
+   RESET PROGRESS (OPTIONAL)
+===================== */
+  const resetProgress = () => {
+    localStorage.removeItem("sqlstudio-progress");
+    setCompleted({});
+  };
 
   /* =====================
      PROGRESS CALCULATION
@@ -98,6 +147,18 @@ function App() {
         setFeedback({ type: "error", message: verdict.reason });
       }
 
+      fetch("http://127.0.0.1:5050/api/attempts/save", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    userId: "demo-user-1", // temporary until auth
+    assignmentId: selectedAssignment.id,
+    difficulty,
+    sql,
+    correct: verdict.ok,
+  }),
+}).catch(() => {});
+
       setHistory((prev) => [sql, ...prev].slice(0, 5));
     } catch {
       alert("Backend not reachable");
@@ -124,47 +185,130 @@ function App() {
 
         {/* HEADER */}
         <header className="header">
-          <h1 className="title">SQL STUDIO</h1>
-        </header>
+  <h1 className="title">SQL STUDIO</h1>
+</header>
 
         <div className="divider" />
+        <div className="toolbar">
+  {/* DIFFICULTY + MODE SWITCH ROW */}
+<div className="top-controls">
+  <div className="difficulty-select">
+    <label>Difficulty Level</label>
+    <select
+      value={difficulty}
+      onChange={(e) => {
+        setDifficulty(e.target.value);
+        setSelectedAssignment(null);
+        setResult(null);
+        setSql("");
+        setHistory([]);
+        setFeedback(null);
+      }}
+    >
+      <option value="" disabled>Select difficulty</option>
+      <option value="easy">Easy</option>
+      <option value="medium">Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+  </div>
+  
+  
 
-        {!difficulty && (
-          <div className="intro-card">
-            <h2>Welcome to SQL Studio 👋</h2>
-            <p>
-              Practice SQL queries with real-world assignments.
-              Choose a difficulty level to begin.
-            </p>
+  {/* =====================
+   MODE SWITCH + LOGOUT
+===================== */}
+<div className="mode-switch">
 
-            <ul>
-              <li>✔ 45 curated SQL problems</li>
-              <li>✔ Auto-check correctness</li>
-              <li>✔ Progress tracking</li>
-            </ul>
-          </div>
-        )}
+  <div
+    className={`switch-indicator ${showDashboard ? "right" : "left"}`}
+  />
 
-        {/* DIFFICULTY SELECT */}
-        <div className="difficulty-select">
-          <label>Difficulty Level</label>
-          <select
-            value={difficulty}
-            onChange={(e) => {
-              setDifficulty(e.target.value);
-              setSelectedAssignment(null);
-              setResult(null);
-              setSql("");
-              setHistory([]);
-              setFeedback(null);
-            }}
-          >
-            <option value="" disabled>Select difficulty</option>
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-        </div>
+  <button
+    className={!showDashboard ? "active" : ""}
+    onClick={() => setShowDashboard(false)}
+  >
+    🧪 Practice
+  </button>
+
+  <button
+    className={showDashboard ? "active" : ""}
+    onClick={() => setShowDashboard(true)}
+  >
+    📊 Dashboard
+  </button>
+
+  {/* 🔴 LOGOUT BUTTON */}
+  <button
+    className="logout-btn"
+    onClick={logout}
+  >
+    🚪 Logout
+  </button>
+
+</div>
+</div>
+</div>
+{showDashboard ? (
+  /* =====================
+     DASHBOARD VIEW
+  ===================== */
+  <div className="dashboard">
+  <h2 className="dashboard-title">Your Dashboard</h2>
+
+  {/* STATS */}
+  <div className="dashboard-stats">
+    <div className="stat-card">
+      <h3>Total Completed</h3>
+      <p>{Object.keys(completed).length}</p>
+    </div>
+
+    <div className="stat-card">
+      <h3>Current Difficulty</h3>
+      <p>{difficulty ? difficulty.toUpperCase() : "—"}</p>
+    </div>
+  </div>
+
+  {/* COMPLETED LIST */}
+  {Object.keys(completed).length === 0 ? (
+    <div className="dashboard-empty">
+      <p>No assignments completed yet.</p>
+    </div>
+  ) : (
+    <ul className="completed-list">
+      {Object.keys(completed).map((key) => (
+        <li key={key}>✔ {key}</li>
+      ))}
+    </ul>
+  )}
+</div>
+) : (
+  /* =====================
+     PRACTICE VIEW
+  ===================== */
+  <>
+    {!difficulty && (
+      <div className="intro-card">
+        <h2>Welcome to SQL Studio 👋</h2>
+        <p>
+          Practice SQL queries with real-world assignments.
+          Choose a difficulty level to begin.
+        </p>
+        <ul>
+          <li>✔ 45 curated SQL problems</li>
+          <li>✔ Auto-check correctness</li>
+          <li>✔ Progress tracking</li>
+        </ul>
+      </div>
+    )}
+
+    {/* EVERYTHING below stays EXACTLY as you already have */}
+    {/* progress card */}
+    {/* assignment list */}
+    {/* assignment details */}
+    {/* workspace */}
+    {/* result table */}
+  </>
+)}
 
         {difficulty && !selectedAssignment && (
           <p className="difficulty-info">
@@ -173,20 +317,31 @@ function App() {
           </p>
         )}
 
-        {/* PROGRESS */}
-        {difficulty && (
-          <div className="progress-card">
-            <div className="progress-text">
-              Progress: {completedCount} / {totalAssignments}
-            </div>
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
-        )}
+       {/* PROGRESS */}
+{difficulty && (
+  <div className="progress-card">
+    <div className="progress-header">
+      <div className="progress-text">
+        Progress: {completedCount} / {totalAssignments}
+      </div>
+
+      {/* ✅ RESET BUTTON */}
+      <button
+        className="reset-btn"
+        onClick={resetProgress}
+      >
+        Reset
+      </button>
+    </div>
+
+    <div className="progress-bar">
+      <div
+        className="progress-fill"
+        style={{ width: `${progressPercent}%` }}
+      />
+    </div>
+  </div>
+)}
 
         {/* ASSIGNMENT LIST */}
         {difficulty && !selectedAssignment && (
